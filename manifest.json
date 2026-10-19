@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "检索版插件",
+  "version": "1.5.9",
+  "minimum_chrome_version": "116",
+  "description": "检索版插件：支持按客户旺旺号检索并导出 1688 聊天记录。",
+  "icons": {
+    "16": "assets/icons/icon16.png",
+    "32": "assets/icons/icon32.png",
+    "48": "assets/icons/icon48.png",
+    "128": "assets/icons/icon128.png"
+  },
+  "permissions": ["activeTab", "tabs", "storage", "downloads", "offscreen", "sidePanel", "scripting"],
+  "host_permissions": [
+    "https://work.1688.com/*",
+    "https://air.1688.com/*",
+    "https://*.alicdn.com/*",
+    "https://*.aliyuncs.com/*",
+    "https://*.aliyun-inc.com/*",
+    "https://open.feishu.cn/*",
+    "https://*.feishu.cn/*",
+    "https://open.larksuite.com/*"
+  ],
+  "background": { "service_worker": "src/background.js" },
+  "action": {
+    "default_title": "检索版插件"
+  },
+  "side_panel": {
+    "default_path": "src/modules/chat-export/ui/popup/popup.html"
+  },
+  "content_scripts": [{
+    "matches": ["https://work.1688.com/*", "https://air.1688.com/*"],
+    "js": [
+      "src/version.js",
+      "src/modules/chat-export/shared/download-filename.js",
+      "src/modules/chat-export/shared/date-selection.js",
+      "src/modules/chat-export/content/content.js"
+    ],
+    "all_frames": true,
+    "run_at": "document_idle"
+  }],
+  "web_accessible_resources": [{
+    "resources": ["src/modules/chat-export/content/injected-network.js"],
+    "matches": ["https://air.1688.com/*"]
+  }]
+}

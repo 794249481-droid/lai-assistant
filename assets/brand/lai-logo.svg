@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="248" height="64" viewBox="0 0 248 64" role="img" aria-label="LAI助手">
+  <defs>
+    <linearGradient id="laiGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4F46E5"/>
+      <stop offset="1" stop-color="#06B6D4"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="18" fill="url(#laiGradient)"/>
+  <path d="M16 45 25 19h6l9 26h-6l-2-6H22l-2 6h-6Zm8-11h7l-3.5-10L24 34Z" fill="#fff"/>
+  <path d="M43 19h5v26h-5z" fill="#A5F3FC"/>
+  <text x="78" y="43" font-family="Arial,'PingFang SC',sans-serif" font-size="33" font-weight="800" letter-spacing="1" fill="#1E293B">LAI</text>
+  <text x="150" y="42" font-family="'PingFang SC','Microsoft YaHei',sans-serif" font-size="20" font-weight="600" fill="#475569">助手</text>
+</svg>

@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="./popup.css">
+    <title>检索版插件</title>
+  </head>
+  <body class="aifyModule aifyModule--chat">
+    <main class="chat-panel integratedModuleShell">
+      <header class="title-row integratedModuleHeader">
+        <img class="lai-brand-logo" src="../../../../../assets/brand/lai-logo.svg" alt="检索版插件">
+        <h1>检索版插件</h1>
+        <span id="runStatusBadge" class="run-status-badge" data-status="idle" aria-live="polite">空闲</span>
+      </header>
+      <p id="status">请打开聊天记录页面，然后读取员工账号。</p>
+
+      <button id="refresh" type="button">刷新员工列表</button>
+      <section class="employee-section" aria-label="员工账号">
+        <div class="section-header">
+          <strong>员工账号，可多选</strong>
+          <span id="selectedCount">已选择 0 个员工</span>
+        </div>
+        <div class="mini-actions">
+          <button id="selectAll" type="button">全选</button>
+          <button id="clearSelection" type="button">清空</button>
+        </div>
+        <div id="employeeList" class="employee-list" role="group" aria-label="员工账号列表"></div>
+      </section>
+
+      <section class="customer-search-section" aria-labelledby="customerAccountLabel">
+        <div class="section-header">
+          <strong id="customerAccountLabel">客户旺旺号检索</strong>
+          <span>选填，留空则导出全部客户</span>
+        </div>
+        <input id="customerAccount" type="text" maxlength="80" autocomplete="off" placeholder="请输入客户旺旺号，例如：buyer_123456">
+        <button id="searchCustomerEmployees" class="customer-search-button" type="button">检索已勾选销售</button>
+        <p id="customerSearchResult" class="customer-search-result" aria-live="polite">输入旺旺号后，可检索对应销售。</p>
+      </section>
+
+      <section id="taskProgressCard" class="task-progress-card" aria-labelledby="taskProgressTitle">
+        <div class="task-progress-header">
+          <strong id="taskProgressTitle">任务执行</strong>
+          <span id="taskProgressStatus" class="task-progress-status" data-status="idle" role="status">等待</span>
+        </div>
+        <div id="taskProgressBar" class="task-progress-track" role="progressbar" aria-labelledby="taskProgressTitle" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="等待，0%">
+          <span id="taskProgressFill" class="task-progress-fill"></span>
+        </div>
+        <div class="task-progress-details">
+          <span id="taskProgressText">等待开始导出任务。</span>
+          <span id="taskProgressPercent">0%</span>
+        </div>
+      </section>
+
+      <section id="dateSelectionSection" class="date-selection-section" data-mode="custom" aria-labelledby="dateSelectionTitle">
+        <div class="section-header">
+          <strong id="dateSelectionTitle">日期范围</strong>
+          <span class="date-selection-hint">两种方式二选一</span>
+        </div>
+        <div class="date-mode-options" role="radiogroup" aria-label="日期选择方式">
+          <label class="date-mode-option">
+            <input type="radio" name="dateMode" value="custom" checked aria-controls="customDatePanel">
+            <span>自定义日期</span>
+          </label>
+          <label class="date-mode-option">
+            <input type="radio" name="dateMode" value="preset" aria-controls="datePresetPanel">
+            <span>快捷日期</span>
+          </label>
+        </div>
+
+        <div id="customDatePanel" class="custom-date-panel" data-active="true">
+          <div class="dates">
+            <label>
+              开始日期
+              <input id="startDate" type="date">
+            </label>
+            <label>
+              结束日期
+              <input id="endDate" type="date">
+            </label>
+          </div>
+        </div>
+
+        <div id="datePresetPanel" class="date-preset-panel" data-active="false">
+          <div class="date-preset-buttons" role="group" aria-label="快捷日期范围">
+            <button class="date-preset-button" type="button" data-date-preset="yesterday" aria-pressed="false">昨天</button>
+            <button class="date-preset-button" type="button" data-date-preset="lastWeek" aria-pressed="false">上周</button>
+            <button class="date-preset-button" type="button" data-date-preset="last15Days" aria-pressed="false">近15天</button>
+            <button class="date-preset-button" type="button" data-date-preset="last3Months" aria-pressed="false">近三个月</button>
+            <button class="date-preset-button" type="button" data-date-preset="lastMonth" aria-pressed="false">上个月</button>
+            <button class="date-preset-button" type="button" data-date-preset="thisMonth" aria-pressed="false">本月</button>
+          </div>
+          <p id="datePresetSummary" aria-live="polite">请选择一个快捷日期范围。</p>
+        </div>
+      </section>
+
+      <section class="store-name-section" aria-labelledby="storeNameLabel">
+        <div class="section-header">
+          <strong id="storeNameLabel">店铺名称</strong>
+          <span id="storeNameHint">用于导出文件命名</span>
+        </div>
+        <div class="store-name-actions">
+          <input id="storeName" type="text" maxlength="60" autocomplete="organization" placeholder="例如：丹阳雅格眼镜有限公司" aria-describedby="storeNameHint">
+          <button id="saveStoreName" type="button">保存店铺名称</button>
+        </div>
+      </section>
+
+      <section class="feishu-sync-section" aria-labelledby="feishuSyncTitle">
+        <div class="feishu-sync-heading">
+          <label class="feishu-sync-toggle" for="syncToFeishu">
+            <input id="syncToFeishu" type="checkbox">
+            <span>
+              <strong id="feishuSyncTitle">同步保存到飞书多维表格</strong>
+              <small>关闭后仅下载到本地，无需填写飞书配置。</small>
+            </span>
+          </label>
+          <button id="toggleFeishuSyncConfig" class="feishu-config-collapse" type="button" hidden aria-controls="feishuSyncConfig" aria-expanded="true">收起配置</button>
+        </div>
+        <div id="feishuSyncConfig" class="feishu-sync-config" hidden>
+          <div class="feishu-sync-grid">
+            <label>
+              App ID
+              <input id="feishuAppId" type="text" autocomplete="off" placeholder="cli_xxxxxxxxxxxxxxxx">
+            </label>
+            <label>
+              App Secret
+              <input id="feishuAppSecret" type="password" autocomplete="off" placeholder="输入飞书应用密钥">
+            </label>
+          </div>
+          <button id="saveFeishuCredentials" class="feishu-config-button" type="button">保存 App 凭证</button>
+          <label>
+            飞书多维表格链接
+            <input id="feishuTableUrl" type="url" autocomplete="off" placeholder="https://xxx.feishu.cn/base/...?...table=tbl...">
+          </label>
+          <div class="feishu-table-actions">
+            <button id="saveFeishuTable" class="feishu-config-button" type="button">读取附件字段</button>
+            <label>
+              附件字段
+              <select id="feishuAttachmentField" disabled>
+                <option value="">请先读取附件字段</option>
+              </select>
+            </label>
+          </div>
+          <p id="feishuSyncHint" class="feishu-sync-hint" aria-live="polite">开启同步后，请保存凭证、读取表格字段并选择附件字段。</p>
+        </div>
+      </section>
+
+      <div class="export-actions">
+        <button id="exportExcel" type="button">导出 Excel</button>
+        <button id="exportJson" type="button">导出 JSON</button>
+      </div>
+      <div id="taskControls" class="task-controls" hidden>
+        <button id="pause" type="button">暂停</button>
+        <button id="cancel" type="button">取消任务</button>
+      </div>
+      <div class="log-actions">
+        <button id="clearLog" type="button">清空日志</button>
+        <button id="copyLog" type="button">复制日志</button>
+      </div>
+      <pre id="progress" aria-live="polite"></pre>
+    </main>
+    <script src="../../shared/date-selection.js"></script>
+    <script src="../../shared/preflight-guidance.js"></script>
+    <script src="./popup.js"></script>
+  </body>
+</html>
