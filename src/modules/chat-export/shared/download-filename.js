@@ -52,7 +52,7 @@
 
   function buildFilename({ storeName, employeeName, startDate, endDate }, extension) {
     const selectedStoreName = String(storeName || '').trim();
-    const branchName = selectedStoreName === '佛山市蓝蓓斯家具有限公司' ? '二店' : '一店';
+    const branchName = selectedStoreName ? '店铺' : '未命名店铺';
     const storePart = safeFileNamePart(branchName, '一店');
     const employeePart = safeFileNamePart(employeeName, "员工");
     const startDatePart = safeFileNamePart(startDate, "开始日期");
@@ -75,7 +75,7 @@
 
   function buildJsonFilename({ storeName, employeeName, startDate, endDate }) {
     const selectedStoreName = String(storeName || '').trim();
-    const branchName = selectedStoreName === '佛山市蓝蓓斯家具有限公司' ? '二店' : '一店';
+    const branchName = selectedStoreName ? '店铺' : '未命名店铺';
     const storePart = safeJsonFileNamePart(branchName, '一店');
     const employeePart = safeJsonFileNamePart(employeeName, "unknown");
     const startDatePart = safeJsonFileNamePart(startDate, isoDate(new Date()));
