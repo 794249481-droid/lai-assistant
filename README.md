@@ -1,10 +1,18 @@
 # 1688 客户聊天检索与导出 · 1688 Chat Search & Exporter
 
+[![CI](https://github.com/794249481-droid/lai-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/794249481-droid/lai-assistant/actions/workflows/ci.yml)
+
 > 按客服和客户旺旺号精确检索 1688 聊天记录，并导出为本地文件，适合每日询盘复盘和销售分析。
 >
 > Search 1688 conversations by salesperson and customer account, then export a local report for daily inquiry review and sales analysis.
 
 **Chrome Extension · Search by Customer · Multi-salesperson · Excel/JSON Export**
+
+## 30 秒理解这个项目
+
+如果你需要从 1688 工作台中找到某个客户和不同客服之间的历史沟通，这个扩展可以在本地完成检索和导出。它不建立云端客户库，也不把聊天内容自动发布到第三方平台。
+
+**搜索词 | Search terms:** `1688 chat search` · `1688 chat export` · `Chrome extension` · `customer inquiry` · `sales review` · `Excel export` · `JSON export`
 
 ## 项目定位
 
@@ -14,10 +22,17 @@
 
 `选择客服 → 输入客户旺旺号 → 检索近三个月 → 导出聊天记录 → 脱敏 → 导入 chat-analyzer → 输出客户需求、产品关注点和市场趋势`
 
-本版本为检索版插件，支持按客户旺旺号精确检索并导出 1688 聊天记录。
+本版本为公开整理版，支持按客户旺旺号精确检索并导出 1688 聊天记录。它适合销售复盘、客服培训和产品需求收集，不承诺绕过 1688 的登录、权限或页面限制。
 
 - 勾选要检索的销售后输入客户旺旺号，点击“检索已勾选销售”，只扫描近三个月并显示每个销售匹配的消息数量。
 - 检索结果会回填到员工列表，可取消勾选后点击“导出 JSON”。
+
+## 什么时候值得使用
+
+- 客户说过多个产品需求，需要快速回看完整上下文；
+- 多个客服都接待过同一个客户，需要合并判断跟进状态；
+- 每天需要抽查前一天的询盘，整理产品功能、规格、交期和价格问题；
+- 希望把导出结果交给本地分析工具，而不是手工复制整段聊天。
 
 ## 1.5.9 日期修复
 
@@ -93,3 +108,11 @@ The extension is designed for local export. It does not include customer records
 2. 选择“加载已解压的扩展程序”。
 3. 选择本目录。
 4. 登录 1688 后点击扩展图标打开侧边栏，按提示进入聊天记录查询页并导出。
+
+## 验证状态
+
+本地已验证日期边界、跨月和闰年处理，并检查 Manifest JSON 和关键脚本语法。真实页面的抓取结果仍受 1688 页面结构、账号权限、网络和登录状态影响。建议先用单个客服、单个客户和短日期范围做小规模验证，再扩大范围。
+
+## 贡献与反馈
+
+如果页面升级后出现连接失败、日期错误或导出字段缺失，请提交 Issue，并附上 Chrome 版本、扩展版本、页面模块和脱敏后的错误日志。不要上传客户聊天原文、截图、账号信息或飞书凭据。
