@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "检索版插件",
+  "name": "1688 客户聊天检索与导出",
   "version": "1.5.9",
   "minimum_chrome_version": "116",
-  "description": "检索版插件：支持按客户旺旺号检索并导出 1688 聊天记录。",
+  "description": "按客服和客户账号检索 1688 聊天记录，导出 Excel 或 JSON，适合销售复盘。",
   "icons": {
     "16": "assets/icons/icon16.png",
     "32": "assets/icons/icon32.png",
@@ -23,7 +23,7 @@
   ],
   "background": { "service_worker": "src/background.js" },
   "action": {
-    "default_title": "检索版插件"
+    "default_title": "1688 客户聊天检索"
   },
   "side_panel": {
     "default_path": "src/modules/chat-export/ui/popup/popup.html"
