@@ -3,7 +3,8 @@
 
   const ROLLING_PRESETS = Object.freeze({
     yesterday: { startOffset: -1, endOffset: -1 },
-    last15Days: { startOffset: -14, endOffset: 0 }
+    last15Days: { startOffset: -14, endOffset: 0 },
+    last30Days: { startOffset: -29, endOffset: 0 }
   });
 
   function localCalendarDate(value = new Date()) {
@@ -24,16 +25,6 @@
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
-  }
-
-  // Clamp month-end dates rather than allowing Date.setMonth to roll into the next month.
-  function threeMonthsEarlier(value = new Date()) {
-    const today = localCalendarDate(value);
-    if (!today) return null;
-    const target = new Date(today.getFullYear(), today.getMonth() - 3, 1);
-    const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
-    target.setDate(Math.min(today.getDate(), lastDay));
-    return target;
   }
 
   function dateRange(start, end) {
@@ -78,15 +69,6 @@
       );
     }
 
-    if (preset === 'last3Months') {
-      const historyStart = threeMonthsEarlier(today);
-      historyStart.setDate(historyStart.getDate() + 1);
-      return {
-        startDate: formatLocalDate(historyStart),
-        endDate: formatLocalDate(today)
-      };
-    }
-
     return null;
   }
 
@@ -106,7 +88,6 @@
 
   root.A1688ChatExportDateSelection = {
     formatLocalDate,
-    threeMonthsEarlier,
     getPresetRange,
     resolveDateRange
   };

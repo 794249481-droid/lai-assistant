@@ -1,6 +1,7 @@
 const CHAT_RECORD_URL = "https://work.1688.com/home/seller.htm?_path_=sellerPro/2017Sellerbase_Customer/cco_qcxy_zzh_chat";
 const MODULE_ID = "chatExport";
 const STORE_NAME_KEY = "integrated.chatExport.storeName";
+const DEFAULT_STORE_NAME = "";
 
 function globalSettingsApi() {
   return globalThis.HmsGlobalSettings;
@@ -26,9 +27,6 @@ const taskProgressTextEl = document.querySelector("#taskProgressText");
 const taskProgressPercentEl = document.querySelector("#taskProgressPercent");
 const employeeListEl = document.querySelector("#employeeList");
 const selectedCountEl = document.querySelector("#selectedCount");
-const customerAccountEl = document.querySelector("#customerAccount");
-const searchCustomerEmployeesEl = document.querySelector("#searchCustomerEmployees");
-const customerSearchResultEl = document.querySelector("#customerSearchResult");
 const startDateEl = document.querySelector("#startDate");
 const endDateEl = document.querySelector("#endDate");
 const dateSelectionSectionEl = document.querySelector("#dateSelectionSection");
@@ -39,6 +37,12 @@ const datePresetButtons = Array.from(document.querySelectorAll("[data-date-prese
 const datePresetSummaryEl = document.querySelector("#datePresetSummary");
 const storeNameEl = document.querySelector("#storeName");
 const saveStoreNameEl = document.querySelector("#saveStoreName");
+const dailyExportEnabledEl = document.querySelector("#dailyExportEnabled");
+const dailyExportTimeEl = document.querySelector("#dailyExportTime");
+const saveDailyExportEl = document.querySelector("#saveDailyExport");
+const runDailyExportNowEl = document.querySelector("#runDailyExportNow");
+const dailyExportStatusEl = document.querySelector("#dailyExportStatus");
+const dailyExportHintEl = document.querySelector("#dailyExportHint");
 const syncToFeishuEl = document.querySelector("#syncToFeishu");
 const feishuSyncConfigEl = document.querySelector("#feishuSyncConfig");
 const toggleFeishuSyncConfigEl = document.querySelector("#toggleFeishuSyncConfig");
@@ -52,6 +56,8 @@ const feishuSyncHintEl = document.querySelector("#feishuSyncHint");
 const refreshEl = document.querySelector("#refresh");
 const exportExcelEl = document.querySelector("#exportExcel");
 const exportJsonEl = document.querySelector("#exportJson");
+const exportCustomerHistoryEl = document.querySelector("#exportCustomerHistory");
+const exportModeEls = Array.from(document.querySelectorAll('input[name="exportMode"]'));
 const selectAllEl = document.querySelector("#selectAll");
 const clearSelectionEl = document.querySelector("#clearSelection");
 const taskControlsEl = document.querySelector("#taskControls");
@@ -74,6 +80,7 @@ let activeTaskTabId = null;
 let feishuSync = { enabled: false, fields: [] };
 let feishuConfigCollapsed = false;
 let selectedDatePreset = "";
+let dailyExportSchedule = { enabled: false, time: "08:00", employees: [] };
 
 const RUN_STATUS_LABELS = {
   [TASK_STATUS.IDLE]: "空闲",
@@ -131,7 +138,7 @@ function taskProgressSnapshot(status, taskState) {
       const periodTotal = Number(periodMatch[2]);
       const employeeIndex = Number(employeeMatch[1]);
       const employeeTotal = Number(employeeMatch[2]);
-      const periodFinished = /(?:本周期处理完成|检索完成|已下载|跳过下载|\[跳过\])/.test(latestLog);
+      const periodFinished = /(?:本周期处理完成|已下载|跳过下载|\[跳过\])/.test(latestLog);
       const completed = (employeeIndex - 1) * periodTotal + (periodFinished ? periodIndex : periodIndex - 1);
       const total = periodTotal * employeeTotal;
       if (total > 0) {
@@ -172,6 +179,26 @@ function refreshPreflightGuidance() {
 
 function selectedDateMode() {
   return dateModeEls.find((input) => input.checked)?.value || "custom";
+}
+
+function selectedExportMode() {
+  return exportModeEls.find((input) => input.checked)?.value || "period";
+}
+
+function customerHistoryMode() {
+  return selectedExportMode() === "customerHistory";
+}
+
+function updateExportModeUi() {
+  const history = customerHistoryMode();
+  exportExcelEl.hidden = history;
+  exportJsonEl.hidden = history;
+  exportCustomerHistoryEl.hidden = !history;
+  const dateHint = document.querySelector("#exportModeTitle")?.parentElement?.querySelector("span");
+  if (dateHint) dateHint.textContent = history
+    ? "筛选客户用所选日期；每位客户完整记录单独打包"
+    : "只读取所选日期内的消息";
+  refreshPreflightGuidance();
 }
 
 function resolveSelectedDateRange(now = new Date()) {
@@ -277,10 +304,121 @@ async function restoreStoreName() {
     ]);
     const globalStoreName = String(globalResult?.storeName || "").trim();
     const legacyStoreName = String(legacyResult[STORE_NAME_KEY] || "").trim();
-    storeNameEl.value = globalStoreName || legacyStoreName;
+    storeNameEl.value = globalStoreName || legacyStoreName || DEFAULT_STORE_NAME;
     refreshPreflightGuidance();
   } catch {
     setStatus("店铺名称读取失败，请重新填写后保存。");
+  }
+}
+
+function scheduleTimeIsValid(time) {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(time || ""));
+}
+
+function formatScheduleTime(timestamp) {
+  if (!timestamp) return "";
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false
+  }).format(date);
+}
+
+function renderDailyExportSchedule(schedule = {}) {
+  dailyExportSchedule = {
+    enabled: schedule.enabled === true,
+    time: scheduleTimeIsValid(schedule.time) ? schedule.time : "08:00",
+    employees: Array.isArray(schedule.employees) ? schedule.employees.filter(Boolean) : [],
+    nextRunAt: schedule.nextRunAt || null,
+    nextRecoveryAt: schedule.nextRecoveryAt || null,
+    lastRunAt: schedule.lastRunAt || null,
+    lastResult: schedule.lastResult || "",
+    lastRunSource: schedule.lastRunSource || "",
+    activeRun: schedule.activeRun && typeof schedule.activeRun === "object" ? schedule.activeRun : null
+  };
+  dailyExportEnabledEl.checked = dailyExportSchedule.enabled;
+  dailyExportTimeEl.value = dailyExportSchedule.time;
+  const nextRunText = formatScheduleTime(dailyExportSchedule.nextRunAt);
+  const nextRecoveryText = formatScheduleTime(dailyExportSchedule.nextRecoveryAt);
+  dailyExportStatusEl.textContent = dailyExportSchedule.enabled
+    ? `已启用${nextRunText ? `，下次 ${nextRunText}` : ""}`
+    : "未启用";
+  const lastResult = dailyExportSchedule.lastResult
+    ? ` 上次${dailyExportSchedule.lastRunSource ? `（${dailyExportSchedule.lastRunSource}）` : ""}：${dailyExportSchedule.lastResult}`
+    : "";
+  const recovery = nextRecoveryText ? `；补偿检查 ${nextRecoveryText}` : "";
+  const activeRun = dailyExportSchedule.activeRun;
+  const running = activeRun?.targetDate
+    ? ` 当前正在导出 ${activeRun.targetDate}，请勿重复启动。`
+    : "";
+  dailyExportHintEl.textContent = dailyExportSchedule.enabled
+    ? `每天 ${dailyExportSchedule.time} 自动导出昨天的 JSON，已保存 ${dailyExportSchedule.employees.length} 位销售。${recovery}${running}${lastResult}`
+    : "请先读取员工列表并勾选五位销售，再保存。Chrome、1688 登录页面和电脑需保持可用。";
+  employeeCheckboxes().forEach((input) => {
+    input.checked = dailyExportSchedule.employees.includes(input.value);
+  });
+  updateSelectedCount();
+}
+
+async function restoreDailyExportSchedule() {
+  const result = await sendRuntimeMessage({ type: "GET_DAILY_EXPORT_SCHEDULE" });
+  if (!result?.ok) {
+    dailyExportHintEl.textContent = result?.message || "定时导出设置读取失败，请重新打开插件。";
+    return;
+  }
+  renderDailyExportSchedule(result.schedule || {});
+}
+
+async function saveDailyExportSchedule() {
+  const enabled = dailyExportEnabledEl.checked;
+  const time = dailyExportTimeEl.value;
+  const employees = selectedEmployees();
+  const storeName = await saveStoreName({ announce: false });
+  if (enabled && !scheduleTimeIsValid(time)) {
+    dailyExportHintEl.textContent = "请选择有效的每日执行时间。";
+    return;
+  }
+  if (enabled && employees.length !== 5) {
+    dailyExportHintEl.textContent = `每日自动导出需要固定勾选五位销售，当前为 ${employees.length} 位。`;
+    return;
+  }
+  if (enabled && !storeName) {
+    dailyExportHintEl.textContent = "请先填写店铺名称。";
+    return;
+  }
+  saveDailyExportEl.disabled = true;
+  try {
+    const result = await sendRuntimeMessage({
+      type: "SAVE_DAILY_EXPORT_SCHEDULE",
+      enabled,
+      time,
+      employees,
+      storeName
+    });
+    if (!result?.ok) throw new Error(result?.message || "定时导出设置保存失败。");
+    renderDailyExportSchedule(result.schedule || {});
+    setStatus(enabled ? "每日自动导出已保存。" : "每日自动导出已关闭。");
+    appendLog(enabled
+      ? `[定时] 每天 ${time} 自动导出昨天的 JSON：${employees.join("、")}`
+      : "[定时] 已关闭每日自动导出");
+  } catch (error) {
+    dailyExportHintEl.textContent = error.message || "定时导出设置保存失败。";
+  } finally {
+    saveDailyExportEl.disabled = false;
+  }
+}
+
+async function runDailyExportNow() {
+  runDailyExportNowEl.disabled = true;
+  try {
+    const result = await sendRuntimeMessage({ type: "RUN_DAILY_EXPORT_NOW" });
+    if (!result?.ok) throw new Error(result?.message || "无法启动定时导出测试。");
+    setStatus("已启动每日自动导出测试，请查看任务执行日志。");
+    appendLog("[手动测试] 已启动一次昨天 JSON 导出测试");
+  } catch (error) {
+    dailyExportHintEl.textContent = error.message || "无法启动定时导出测试。";
+  } finally {
+    runDailyExportNowEl.disabled = false;
   }
 }
 
@@ -340,10 +478,10 @@ function setTaskStatus(nextStatus, taskState = null) {
   refreshEl.disabled = active;
   exportExcelEl.disabled = active;
   exportJsonEl.disabled = active;
+  exportCustomerHistoryEl.disabled = active;
   storeNameEl.disabled = active;
   saveStoreNameEl.disabled = active;
   syncToFeishuEl.disabled = active;
-  searchCustomerEmployeesEl.disabled = active;
   toggleFeishuSyncConfigEl.disabled = active || !feishuSync.enabled;
   feishuAppIdEl.disabled = active;
   feishuAppSecretEl.disabled = active;
@@ -463,7 +601,7 @@ async function sendWithRetry(message, attempts = 12, tabId = null) {
       // The content script guards against duplicate listeners in the same context.
       await chrome.scripting.executeScript({
         target: { tabId: tab.id, allFrames: true },
-        files: ["src/modules/chat-export/shared/download-filename.js", "src/modules/chat-export/shared/date-selection.js", "src/modules/chat-export/content/content.js"]
+        files: ["src/modules/chat-export/shared/download-filename.js", "src/modules/chat-export/content/content.js"]
       });
       const frames = await chrome.scripting.executeScript({
         target: { tabId: tab.id, allFrames: true },
@@ -652,6 +790,7 @@ function renderEmployees(employees) {
     const input = document.createElement("input");
     input.type = "checkbox";
     input.value = name;
+    input.checked = dailyExportSchedule.employees.includes(name);
     input.addEventListener("change", updateSelectedCount);
 
     const span = document.createElement("span");
@@ -674,16 +813,16 @@ function selectedEmployees() {
 }
 
 function earliestAllowedDate(today = new Date()) {
-  return A1688ChatExportDateSelection.formatLocalDate(A1688ChatExportDateSelection.threeMonthsEarlier(today));
+  const date = new Date(today);
+  date.setMonth(date.getMonth() - 3);
+  return date.toISOString().slice(0, 10);
 }
 
 function validDateRange(dateRange = resolveSelectedDateRange()) {
   if (selectedDateMode() === "preset" && !selectedDatePreset) return "请选择一个快捷日期范围。";
   if (!dateRange?.startDate || !dateRange?.endDate) return "请选择开始日期和结束日期。";
   if (dateRange.endDate < dateRange.startDate) return "结束日期不能早于开始日期。";
-  if (selectedDatePreset !== "last3Months" && dateRange.startDate < earliestAllowedDate()) {
-    return "页面只能查询三个月之内的聊天记录。";
-  }
+  if (dateRange.startDate < earliestAllowedDate()) return "页面只能查询三个月之内的聊天记录。";
   return "";
 }
 
@@ -705,10 +844,6 @@ async function refreshEmployees() {
       return;
     }
 
-    setDateMode("custom");
-    startDateEl.value = earliestAllowedDate();
-    endDateEl.value = todayLocalDate();
-    refreshPreflightGuidance();
     renderEmployees(result.employees || []);
     setStatus(result.employees?.length
       ? `已读取 ${result.employees.length} 个员工账号`
@@ -722,92 +857,12 @@ async function refreshEmployees() {
   }
 }
 
-function todayLocalDate() {
-  const today = new Date();
-  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-}
-
-function recentThreeMonthsStartDate() {
-  return A1688ChatExportDateSelection.getPresetRange("last3Months").startDate;
-}
-
-async function searchCustomerEmployees() {
-  const customerAccount = customerAccountEl.value.trim();
-  if (!customerAccount) {
-    customerSearchResultEl.textContent = "请先输入客户旺旺号。";
-    customerAccountEl.focus();
-    return;
-  }
-
-  if (taskStatus !== TASK_STATUS.IDLE && taskStatus !== TASK_STATUS.DONE && taskStatus !== TASK_STATUS.ERROR) {
-    customerSearchResultEl.textContent = "当前已有任务执行中，请等待任务完成。";
-    return;
-  }
-
-  const taskId = createTaskId();
-  const searchStartDate = recentThreeMonthsStartDate();
-  const searchEndDate = todayLocalDate();
-  setTaskStatus(TASK_STATUS.RUNNING);
-  customerSearchResultEl.textContent = "正在检索近三个月聊天记录，请稍候...";
-  const initialLog = `[准备] 开始检索客户旺旺号：${customerAccount}，日期 ${searchStartDate} 至 ${searchEndDate}`;
-  appendLog(initialLog);
-
-  try {
-    const employees = employeeCheckboxes().filter((input) => input.checked).map((input) => input.value).filter(Boolean);
-    if (employees.length === 0) throw new Error("没有读取到员工账号，请先打开聊天记录查询页面。");
-
-    const tab = await ensureChatRecordPage();
-    const taskStarted = await sendRuntimeMessage({
-      type: "TASK_STARTED",
-      formatLabel: "客户检索",
-      employees,
-      customerAccount,
-      startDate: searchStartDate,
-      endDate: searchEndDate,
-      taskId,
-      tabId: tab.id,
-      initialLog
-    });
-    if (!taskStarted?.ok) throw new Error(taskStarted?.message || "客户检索任务未能开始。");
-    const result = await sendWithRetry({
-      type: "SEARCH_CUSTOMER_EMPLOYEES",
-      taskId,
-      customerAccount,
-      employees,
-      startDate: searchStartDate,
-      endDate: searchEndDate
-    }, 12, tab.id);
-
-    if (!result?.ok) throw new Error(result?.message || "客户旺旺号检索失败。");
-    selectDatePreset("last3Months");
-    const matches = Array.isArray(result.matches) ? result.matches : [];
-    renderEmployees((result.employees || []).map((employee) => String(employee)));
-    employeeCheckboxes().forEach((input) => { input.checked = true; });
-    updateSelectedCount();
-    const matched = result.employees || [];
-    customerSearchResultEl.textContent = matched.length
-      ? `检索完成：\n${matches.map((item) => `${item.employee}：${item.messageCount || 0} 条消息`).join("\n")}\n已勾选检测到记录的销售，可分别导出 JSON。`
-      : "检索完成：已勾选销售中没有找到对应客户记录。";
-    setStatus(matched.length ? "已找到对应销售，请选择后导出 JSON。" : "未找到对应销售。");
-    const countSummary = matches.length
-      ? matches.map((item) => `${item.employee} ${item.messageCount || 0} 条`).join("；")
-      : "没有匹配销售";
-    const doneMessage = `检索完成：${countSummary}`;
-    appendLog(`[完成] ${doneMessage}`);
-    const taskState = await sendRuntimeMessage({ type: "TASK_STATUS_CHANGED", status: "done", message: doneMessage });
-    setTaskStatus(TASK_STATUS.DONE, taskState?.taskState || { status: "done", message: doneMessage, logs: logLines });
-  } catch (error) {
-    customerSearchResultEl.textContent = error.message || "客户旺旺号检索失败。";
-    appendLog(`[错误] ${error.message || "客户旺旺号检索失败"}`);
-    const taskState = await sendRuntimeMessage({ type: "TASK_STATUS_CHANGED", status: "error", message: error.message || "客户旺旺号检索失败。" });
-    setTaskStatus(TASK_STATUS.ERROR, taskState?.taskState || { status: "error", message: error.message, logs: logLines });
-  } finally {
-    if (taskStatus === TASK_STATUS.RUNNING) setTaskStatus(TASK_STATUS.IDLE);
-  }
-}
-
-async function startExport(exportFormat) {
-  const feishuSyncValidation = await validateFeishuSyncBeforeExport();
+async function startExport(exportFormat, requestedMode = selectedExportMode()) {
+  const exportMode = requestedMode === "customerHistory" ? "customerHistory" : "period";
+  const historyMode = exportMode === "customerHistory";
+  const feishuSyncValidation = historyMode
+    ? { ok: true, enabled: false }
+    : await validateFeishuSyncBeforeExport();
   if (!feishuSyncValidation.ok) {
     appendLog(`[错误] ${feishuSyncValidation.message}`);
     return;
@@ -817,8 +872,7 @@ async function startExport(exportFormat) {
   updateDateSelectionUi();
   const dateError = validDateRange(dateRange);
   const employees = selectedEmployees();
-  const customerAccount = customerAccountEl.value.trim();
-  const formatLabel = exportFormat === "json" ? "JSON" : "Excel";
+  const formatLabel = historyMode ? "客户完整记录 ZIP" : (exportFormat === "json" ? "JSON" : "Excel");
 
   if (!storeName) {
     appendLog("[错误] 请先填写并保存店铺名称。");
@@ -837,9 +891,11 @@ async function startExport(exportFormat) {
 
   setTaskStatus(TASK_STATUS.RUNNING);
   setStatus("正在扫描聊天记录...");
-  const syncLabel = feishuSync.enabled ? "，同步到飞书多维表格" : "，仅保存到本地";
-  const customerLabel = customerAccount ? `，客户旺旺号 ${customerAccount}` : "，全部客户";
-  const initialLog = `[准备] 开始导出 ${formatLabel}，店铺 ${storeName}，${employees.length} 个员工，日期 ${dateRange.startDate} 至 ${dateRange.endDate}${customerLabel}，按 7 天周期依次导出${syncLabel}`;
+  const syncLabel = feishuSyncValidation.enabled ? "，同步到飞书多维表格" : "，仅保存到本地";
+  const modeLabel = historyMode
+    ? "按客户完整记录：先按日期筛客户，再逐客户读取完整记录"
+    : "按 7 天周期读取所选日期内消息";
+  const initialLog = `[准备] 开始导出 ${formatLabel}，店铺 ${storeName}，${employees.length} 个员工，日期 ${dateRange.startDate} 至 ${dateRange.endDate}，${modeLabel}${syncLabel}`;
   const taskId = createTaskId();
   appendLog(initialLog);
 
@@ -851,9 +907,8 @@ async function startExport(exportFormat) {
       type: "TASK_STARTED",
       formatLabel,
       employees,
-      customerAccount,
       storeName,
-      syncToFeishu: feishuSync.enabled,
+      syncToFeishu: feishuSyncValidation.enabled,
       startDate: dateRange.startDate,
       endDate: dateRange.endDate,
       taskId,
@@ -867,10 +922,10 @@ async function startExport(exportFormat) {
       type: "START_EXPORT",
       taskId,
       exportFormat,
+      exportMode,
       employees,
-      customerAccount,
       storeName,
-      syncToFeishu: feishuSync.enabled,
+      syncToFeishu: feishuSyncValidation.enabled,
       startDate: dateRange.startDate,
       endDate: dateRange.endDate
     }, 12, tab.id);
@@ -1002,10 +1057,13 @@ chrome.runtime.onMessage.addListener((message) => {
 });
 
 refreshEl.addEventListener("click", refreshEmployees);
-searchCustomerEmployeesEl.addEventListener("click", searchCustomerEmployees);
 exportExcelEl.addEventListener("click", () => startExport("excel"));
 exportJsonEl.addEventListener("click", () => startExport("json"));
+exportCustomerHistoryEl.addEventListener("click", () => startExport("json", "customerHistory"));
+exportModeEls.forEach((input) => input.addEventListener("change", updateExportModeUi));
 saveStoreNameEl.addEventListener("click", () => saveStoreName());
+saveDailyExportEl.addEventListener("click", saveDailyExportSchedule);
+runDailyExportNowEl.addEventListener("click", runDailyExportNow);
 storeNameEl.addEventListener("input", refreshPreflightGuidance);
 syncToFeishuEl.addEventListener("change", updateFeishuSyncEnabled);
 toggleFeishuSyncConfigEl.addEventListener("click", toggleFeishuSyncConfig);
@@ -1047,6 +1105,7 @@ if (declineUsageNoticeEl) {
 }
 renderEmployees([]);
 updateDateSelectionUi();
+updateExportModeUi();
 setTaskStatus(TASK_STATUS.IDLE);
 restoreUsageNoticeState();
-Promise.allSettled([restoreStoreName(), restoreFeishuSyncSettings()]).finally(restoreTaskState);
+Promise.allSettled([restoreStoreName(), restoreFeishuSyncSettings(), restoreDailyExportSchedule()]).finally(restoreTaskState);

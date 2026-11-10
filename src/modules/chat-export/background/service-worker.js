@@ -3,6 +3,13 @@ const TASK_STATE_KEY = "integrated.chatExport.taskState";
 const CHAT_EXPORT_OFFSCREEN_URL = "src/modules/chat-export/ui/offscreen/offscreen.html";
 const CHAT_EXPORT_BLOB_DB = "chatExportBlobDownloads";
 const CHAT_EXPORT_BLOB_STORE = "files";
+const DAILY_EXPORT_SCHEDULE_KEY = "integrated.chatExport.dailyExportSchedule";
+const DAILY_EXPORT_ALARM_NAME = "lai-daily-json-export";
+const DAILY_EXPORT_RECOVERY_ALARM_NAME = "lai-daily-json-export-recovery";
+const DAILY_EXPORT_HEALTH_ALARM_NAME = "lai-daily-json-export-health";
+const DAILY_EXPORT_RECOVERY_DELAY_MS = 20 * 60 * 1000;
+const DAILY_EXPORT_STALE_RUN_MS = 40 * 60 * 1000;
+const CHAT_RECORD_URL = "https://work.1688.com/home/seller.htm?_path_=sellerPro/2017Sellerbase_Customer/cco_qcxy_zzh_chat";
 const DOWNLOAD_FILENAME_ROUTER = globalThis.A1688DownloadFilenameRouter;
 const CHAT_EXPORT_DOWNLOAD_FILENAME = globalThis.A1688ChatExportDownloadFilename;
 const CHAT_EXPORT_COMPATIBLE_JSON = globalThis.A1688ChatExportCompatibleJson;
@@ -12,6 +19,7 @@ const DOWNLOAD_IDS_BY_TASK_ID = new Map();
 const FETCH_CONTROLLERS_BY_TASK_ID = new Map();
 const CANCELED_TASK_IDS = new Set();
 let creatingOffscreenDocument = null;
+let dailyExportRunning = false;
 
 if (!DOWNLOAD_FILENAME_ROUTER) {
   throw new Error("A1688DownloadFilenameRouter is not installed.");
@@ -123,6 +131,50 @@ async function withBlobStore(mode, callback) {
 
 async function storeBlobForOffscreen(blobKey, blob) {
   await withBlobStore("readwrite", (store) => requestToPromise(store.put({ blob }, blobKey)));
+}
+
+async function readStoredBlobRecord(blobKey) {
+  const db = await openBlobDb();
+  try {
+    const transaction = db.transaction(CHAT_EXPORT_BLOB_STORE, "readonly");
+    const store = transaction.objectStore(CHAT_EXPORT_BLOB_STORE);
+    return await requestToPromise(store.get(blobKey));
+  } finally {
+    db.close();
+  }
+}
+
+function customerHistoryPartKey(taskId, index) {
+  return `customer-history:${taskId}:${String(index).padStart(6, "0")}`;
+}
+
+async function storeCustomerHistoryPart({ taskId, index, customer, rows }) {
+  throwIfBackgroundTaskCanceled(taskId);
+  const records = buildCompatibleRecords({ rows: rows || [] });
+  const compatibleResult = {
+    pluginName: "LAI助手",
+    pluginVersion: globalThis.LAI_PLUGIN_VERSION || "V1.4.3",
+    exportMode: "customerHistory",
+    customerName: customer || "客户",
+    ...CHAT_EXPORT_COMPATIBLE_JSON.convertRecords(records)
+  };
+  const blob = new Blob([
+    CHAT_EXPORT_COMPATIBLE_JSON.stringifyCompatibleJson(compatibleResult)
+  ], { type: "application/json;charset=utf-8" });
+  const key = customerHistoryPartKey(taskId, index);
+  await withBlobStore("readwrite", (store) => requestToPromise(store.put({ blob, customer: customer || "客户" }, key)));
+  throwIfBackgroundTaskCanceled(taskId);
+}
+
+async function deleteStoredCustomerHistoryParts(taskId) {
+  if (!taskId) return;
+  const prefix = `customer-history:${taskId}:`;
+  await withBlobStore("readwrite", async (store) => {
+    const keys = await requestToPromise(store.getAllKeys());
+    await Promise.all(keys
+      .filter((key) => String(key).startsWith(prefix))
+      .map((key) => requestToPromise(store.delete(key))));
+  }).catch(() => {});
 }
 
 async function deleteStoredBlob(blobKey) {
@@ -270,6 +322,8 @@ async function cancelActiveDownloads(taskId) {
     });
     await cleanupManagedDownload(downloadId);
   }
+
+  await deleteStoredCustomerHistoryParts(taskId);
 
   return { canceledDownloads: downloadIds.length, abortedFetches: controllers.length };
 }
@@ -585,8 +639,8 @@ function coreXml() {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <dc:title>聊天记录</dc:title>
-  <dc:creator>检索版插件 ${globalThis.LAI_PLUGIN_VERSION || "V1.5.0"}</dc:creator>
-  <cp:lastModifiedBy>检索版插件 ${globalThis.LAI_PLUGIN_VERSION || "V1.5.0"}</cp:lastModifiedBy>
+  <dc:creator>LAI助手 ${globalThis.LAI_PLUGIN_VERSION || "V1.4.3"}</dc:creator>
+  <cp:lastModifiedBy>LAI助手 ${globalThis.LAI_PLUGIN_VERSION || "V1.4.3"}</cp:lastModifiedBy>
   <dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created>
   <dcterms:modified xsi:type="dcterms:W3CDTF">${now}</dcterms:modified>
 </cp:coreProperties>`;
@@ -595,7 +649,7 @@ function coreXml() {
 function appXml() {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
-  <Application>检索版插件 ${globalThis.LAI_PLUGIN_VERSION || "V1.5.0"}</Application>
+  <Application>LAI助手 ${globalThis.LAI_PLUGIN_VERSION || "V1.4.3"}</Application>
 </Properties>`;
 }
 
@@ -782,7 +836,7 @@ function conversationDisplayRows({ employee, rows, startDate, endDate }) {
       hasImage: false
     },
     {
-      values: [`插件版本：${globalThis.LAI_PLUGIN_VERSION || "V1.5.0"}`, "", "", "", "", "", "", "", "", ""],
+      values: [`插件版本：${globalThis.LAI_PLUGIN_VERSION || "V1.4.3"}`, "", "", "", "", "", "", "", "", ""],
       hasImage: false
     },
     {
@@ -1283,8 +1337,585 @@ function exportResultMessage(formatLabel, feishu) {
     : `${localMessage} 飞书同步失败：${feishu.message || "未知错误"}`;
 }
 
+async function buildBatchArchive({ files = [], exportFormat, startDate, endDate, taskId }) {
+  const archiveFiles = [];
+  for (const file of files) {
+    throwIfBackgroundTaskCanceled(taskId);
+    const employee = file.employee || "员工";
+    let data;
+    let filename;
+
+    if (exportFormat === "json") {
+      const records = buildCompatibleRecords({ rows: file.rows || [] });
+      const compatibleResult = {
+        pluginName: "LAI助手",
+        pluginVersion: globalThis.LAI_PLUGIN_VERSION || "V1.4.3",
+        ...CHAT_EXPORT_COMPATIBLE_JSON.convertRecords(records)
+      };
+      const json = CHAT_EXPORT_COMPATIBLE_JSON.stringifyCompatibleJson(compatibleResult);
+      const dateRange = CHAT_EXPORT_COMPATIBLE_JSON.getDateRange(records);
+      filename = CHAT_EXPORT_DOWNLOAD_FILENAME.buildJsonFilename({
+        storeName: file.storeName || "",
+        employeeName: employee,
+        startDate: dateRange.startDate || startDate,
+        endDate: dateRange.endDate || endDate
+      });
+      data = textBytes(json);
+    } else {
+      const rows = await embedImagesForExcel(file.rows || [], { taskId });
+      const workbook = await buildXlsx({
+        rows,
+        startDate,
+        endDate,
+        employeeCount: 1,
+        employeeNames: [employee],
+        taskId
+      });
+      filename = CHAT_EXPORT_DOWNLOAD_FILENAME.buildExcelFilename({
+        storeName: file.storeName || "",
+        employeeName: employee,
+        startDate,
+        endDate
+      });
+      data = await blobToBytes(workbook);
+    }
+
+    archiveFiles.push({ name: filename, data });
+  }
+  return new Blob([createZip(archiveFiles)], { type: "application/zip" });
+}
+
+async function buildCustomerHistoryArchive({ files = [], storeName, startDate, endDate, taskId }) {
+  const archiveFiles = [];
+  const usedNames = new Map();
+  for (const file of files) {
+    throwIfBackgroundTaskCanceled(taskId);
+    const records = buildCompatibleRecords({ rows: file.rows || [] });
+    const compatibleResult = {
+      pluginName: "LAI助手",
+      pluginVersion: globalThis.LAI_PLUGIN_VERSION || "V1.4.3",
+      exportMode: "customerHistory",
+      customerName: file.customer || "客户",
+      ...CHAT_EXPORT_COMPATIBLE_JSON.convertRecords(records)
+    };
+    const json = CHAT_EXPORT_COMPATIBLE_JSON.stringifyCompatibleJson(compatibleResult);
+    const baseName = CHAT_EXPORT_DOWNLOAD_FILENAME.buildCustomerHistoryJsonFilename({
+      storeName,
+      customerName: file.customer,
+      startDate,
+      endDate
+    });
+    const seen = usedNames.get(baseName) || 0;
+    usedNames.set(baseName, seen + 1);
+    const filename = seen
+      ? baseName.replace(/\.json$/i, `_${seen + 1}.json`)
+      : baseName;
+    archiveFiles.push({ name: filename, data: textBytes(json) });
+  }
+  return new Blob([createZip(archiveFiles)], { type: "application/zip" });
+}
+
+/**
+ * 客户完整记录可能远大于 chrome.runtime.sendMessage 的 64MiB 上限。
+ * 内容页会分批暂存，每个客户在此处已转换为独立 JSON Blob；最后只按序读取并打包。
+ */
+async function buildStoredCustomerHistoryArchive({ taskId, fileCount, storeName, startDate, endDate }) {
+  const archiveFiles = [];
+  const usedNames = new Map();
+  const count = Number(fileCount) || 0;
+  for (let index = 0; index < count; index += 1) {
+    throwIfBackgroundTaskCanceled(taskId);
+    const record = await readStoredBlobRecord(customerHistoryPartKey(taskId, index));
+    if (!(record?.blob instanceof Blob)) {
+      throw new Error(`客户完整记录暂存不完整（第 ${index + 1}/${count} 位客户），请重新导出。`);
+    }
+    const baseName = CHAT_EXPORT_DOWNLOAD_FILENAME.buildCustomerHistoryJsonFilename({
+      storeName,
+      customerName: record.customer || "客户",
+      startDate,
+      endDate
+    });
+    const seen = usedNames.get(baseName) || 0;
+    usedNames.set(baseName, seen + 1);
+    const filename = seen
+      ? baseName.replace(/\.json$/i, `_${seen + 1}.json`)
+      : baseName;
+    archiveFiles.push({ name: filename, data: await blobToBytes(record.blob) });
+  }
+  return new Blob([createZip(archiveFiles)], { type: "application/zip" });
+}
+
+function defaultDailyExportSchedule() {
+  return {
+    enabled: false,
+    time: "08:00",
+    employees: [],
+    storeName: "",
+    nextRunAt: null,
+    nextRecoveryAt: null,
+    lastRunAt: null,
+    lastResult: "",
+    lastRunSource: "",
+    lastAutoTriggerAt: null,
+    lastManualTriggerAt: null,
+    lastRecoveryCheckAt: null,
+    lastCompletedTargetDate: "",
+    lastFailureAt: null,
+    enabledAt: null,
+    activeRun: null
+  };
+}
+
+function validScheduleTime(time) {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(time || ""));
+}
+
+async function readDailyExportSchedule() {
+  const result = await chrome.storage.local.get(DAILY_EXPORT_SCHEDULE_KEY);
+  const schedule = { ...defaultDailyExportSchedule(), ...(result[DAILY_EXPORT_SCHEDULE_KEY] || {}) };
+  return {
+    ...schedule,
+    enabled: schedule.enabled === true,
+    time: validScheduleTime(schedule.time) ? schedule.time : "08:00",
+    employees: Array.isArray(schedule.employees) ? schedule.employees.filter(Boolean) : []
+  };
+}
+
+async function writeDailyExportSchedule(schedule) {
+  const next = { ...defaultDailyExportSchedule(), ...schedule };
+  await chrome.storage.local.set({ [DAILY_EXPORT_SCHEDULE_KEY]: next });
+  return next;
+}
+
+function nextDailyScheduleTime(time, now = new Date()) {
+  const [hours, minutes] = String(time).split(":").map(Number);
+  const next = new Date(now);
+  next.setHours(hours, minutes, 0, 0);
+  if (next.getTime() <= now.getTime() + 1000) next.setDate(next.getDate() + 1);
+  return next.getTime();
+}
+
+async function armDailyExportAlarm(schedule = null) {
+  const current = schedule || await readDailyExportSchedule();
+  await chrome.alarms.clear(DAILY_EXPORT_ALARM_NAME);
+  await chrome.alarms.clear(DAILY_EXPORT_RECOVERY_ALARM_NAME);
+  await chrome.alarms.clear(DAILY_EXPORT_HEALTH_ALARM_NAME);
+  if (!current.enabled) {
+    return writeDailyExportSchedule({ ...current, nextRunAt: null, nextRecoveryAt: null });
+  }
+  const nextRunAt = nextDailyScheduleTime(current.time);
+  const nextRecoveryAt = nextRunAt + DAILY_EXPORT_RECOVERY_DELAY_MS;
+  chrome.alarms.create(DAILY_EXPORT_ALARM_NAME, { when: nextRunAt });
+  chrome.alarms.create(DAILY_EXPORT_RECOVERY_ALARM_NAME, { when: nextRecoveryAt });
+  // 每小时自检一次，避免 Chrome 重启或扩展重新加载后闹钟丢失。
+  chrome.alarms.create(DAILY_EXPORT_HEALTH_ALARM_NAME, { periodInMinutes: 60 });
+  return writeDailyExportSchedule({ ...current, nextRunAt, nextRecoveryAt });
+}
+
+async function ensureDailyExportAlarms() {
+  let current = await readDailyExportSchedule();
+  current = await clearStaleDailyRun(current);
+  if (!current.enabled) return armDailyExportAlarm(current);
+  const [primary, recovery] = await Promise.all([
+    chrome.alarms.get(DAILY_EXPORT_ALARM_NAME),
+    chrome.alarms.get(DAILY_EXPORT_RECOVERY_ALARM_NAME)
+  ]);
+  const now = Date.now();
+  const nextRunAt = primary?.scheduledTime;
+  const recoveryAt = recovery?.scheduledTime;
+  if (nextRunAt && nextRunAt > now + 1000) {
+    if (!recoveryAt || recoveryAt <= now + 1000) {
+      const nextRecoveryAt = nextRunAt + DAILY_EXPORT_RECOVERY_DELAY_MS;
+      chrome.alarms.create(DAILY_EXPORT_RECOVERY_ALARM_NAME, { when: nextRecoveryAt });
+      return writeDailyExportSchedule({ ...current, nextRunAt, nextRecoveryAt });
+    }
+    return writeDailyExportSchedule({ ...current, nextRunAt, nextRecoveryAt: recoveryAt });
+  }
+
+  // 主闹钟意外丢失时，不清除仍在等待的当天补偿闹钟。
+  const next = nextDailyScheduleTime(current.time);
+  chrome.alarms.create(DAILY_EXPORT_ALARM_NAME, { when: next });
+  const nextRecoveryAt = recoveryAt && recoveryAt > now + 1000
+    ? recoveryAt
+    : next + DAILY_EXPORT_RECOVERY_DELAY_MS;
+  if (!recoveryAt || recoveryAt <= now + 1000) {
+    chrome.alarms.create(DAILY_EXPORT_RECOVERY_ALARM_NAME, { when: nextRecoveryAt });
+  }
+  chrome.alarms.create(DAILY_EXPORT_HEALTH_ALARM_NAME, { periodInMinutes: 60 });
+  return writeDailyExportSchedule({ ...current, nextRunAt: next, nextRecoveryAt });
+}
+
+function localIsoDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function yesterdayDateRange() {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const value = localIsoDate(yesterday);
+  return { startDate: value, endDate: value };
+}
+
+function dateRangeForTargetDate(targetDate) {
+  const value = String(targetDate || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error("定时导出日期无效。");
+  return { startDate: value, endDate: value };
+}
+
+/** 当前时刻应当已经完成的最近一次日报；在每天执行时间前，检查前一天的排程。 */
+function dueDailyTarget(schedule, now = new Date()) {
+  const [hours, minutes] = String(schedule.time || "08:00").split(":").map(Number);
+  const todaySlot = new Date(now);
+  todaySlot.setHours(hours, minutes, 0, 0);
+  const target = new Date(now);
+  if (now.getTime() < todaySlot.getTime()) target.setDate(target.getDate() - 2);
+  else target.setDate(target.getDate() - 1);
+  const slotAt = new Date(target);
+  slotAt.setDate(slotAt.getDate() + 1);
+  slotAt.setHours(hours, minutes, 0, 0);
+  return { targetDate: localIsoDate(target), slotAt: slotAt.getTime() };
+}
+
+function dailyRunIsFresh(schedule, now = Date.now()) {
+  const startedAt = Number(schedule?.activeRun?.startedAt);
+  return Boolean(schedule?.activeRun?.taskId && Number.isFinite(startedAt) && now - startedAt >= 0 && now - startedAt < DAILY_EXPORT_STALE_RUN_MS);
+}
+
+async function clearStaleDailyRun(schedule, now = Date.now()) {
+  if (!schedule?.activeRun || dailyRunIsFresh(schedule, now)) return schedule;
+  const targetDate = schedule.activeRun.targetDate || "未知日期";
+  return writeDailyExportSchedule({
+    ...schedule,
+    activeRun: null,
+    lastFailureAt: now,
+    lastResult: `检测到 ${targetDate} 的定时任务超过 40 分钟未完成，已释放任务锁并等待补偿。`,
+    lastRunSource: "异常恢复"
+  });
+}
+
+function isChatRecordTab(url = "") {
+  try {
+    const parsed = new URL(url);
+    return (parsed.hostname === "work.1688.com" || parsed.hostname === "air.1688.com") &&
+      (parsed.href.includes("cco_qcxy_zzh_chat") || parsed.href.includes("chatRecord"));
+  } catch {
+    return false;
+  }
+}
+
+function waitForScheduleTabLoad(tabId, timeout = 20000) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    }, timeout);
+    function listener(updatedTabId, info) {
+      if (updatedTabId !== tabId || info.status !== "complete") return;
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    }
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
+function scheduleSleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function getDailyExportTab() {
+  const tabs = await chrome.tabs.query({});
+  const existing = tabs.find((tab) => isChatRecordTab(tab.url));
+  if (existing?.id) return { tab: existing, openedByPlugin: false };
+  const created = await chrome.tabs.create({ url: CHAT_RECORD_URL, active: false });
+  await waitForScheduleTabLoad(created.id);
+  await scheduleSleep(1800);
+  return { tab: await chrome.tabs.get(created.id), openedByPlugin: true };
+}
+
+async function connectDailyExportPage(tabId) {
+  let lastError = null;
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        files: [
+          "src/modules/chat-export/shared/download-filename.js",
+          "src/modules/chat-export/content/content.js"
+        ]
+      });
+      const frames = await chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        func: () => Boolean(globalThis.__GD_CHAT_CONNECTION__?.isTargetPage?.())
+      });
+      const target = frames.find((frame) => frame.result === true);
+      if (target) return target.frameId;
+      lastError = new Error("聊天记录查询页面尚未加载，可能需要重新登录 1688。");
+    } catch (error) {
+      lastError = error;
+    }
+    await scheduleSleep(800);
+  }
+  throw new Error(lastError?.message || "无法连接聊天记录查询页面。");
+}
+
+function dailyRunLabel(source) {
+  if (source === "alarm") return "自动闹钟";
+  if (source === "recovery") return "补偿检查";
+  if (source === "startupRecovery") return "启动补偿";
+  return "手动测试";
+}
+
+async function recordDailyTrigger(schedule, source) {
+  const now = Date.now();
+  const next = {
+    ...schedule,
+    lastRunSource: dailyRunLabel(source),
+    lastResult: `${dailyRunLabel(source)}已触发，正在导出。`
+  };
+  if (source === "alarm") next.lastAutoTriggerAt = now;
+  if (source === "manual") next.lastManualTriggerAt = now;
+  if (source === "recovery") next.lastRecoveryCheckAt = now;
+
+  if (source === "alarm") {
+    // 一到触发时间就立刻注册下一天的主闹钟；无论本次成功、失败或浏览器重启，都无需手动再保存。
+    const nextRunAt = nextDailyScheduleTime(schedule.time);
+    chrome.alarms.create(DAILY_EXPORT_ALARM_NAME, { when: nextRunAt });
+    next.nextRunAt = nextRunAt;
+  }
+  return writeDailyExportSchedule(next);
+}
+
+/**
+ * MV3 的 Service Worker 随时可能被回收，所以运行状态必须落盘。
+ * 任务开始后由 activeRun 持有 40 分钟租约；重启后仍可避免同一天并发导出。
+ */
+async function claimDailyExportRun({ source, targetDate, taskId }) {
+  const current = await readDailyExportSchedule();
+  if (dailyRunIsFresh(current)) return null;
+  return writeDailyExportSchedule({
+    ...current,
+    activeRun: {
+      taskId,
+      targetDate,
+      source,
+      startedAt: Date.now()
+    },
+    lastRunSource: dailyRunLabel(source),
+    lastResult: `${dailyRunLabel(source)}已开始导出 ${targetDate}。`
+  });
+}
+
+async function finishDailyExportSchedule(result, { source, targetDate, success }) {
+  const schedule = await readDailyExportSchedule();
+  const now = Date.now();
+  const next = {
+    ...schedule,
+    lastRunAt: Date.now(),
+    lastResult: result,
+    lastRunSource: dailyRunLabel(source),
+    activeRun: null
+  };
+  if (success) {
+    next.lastCompletedTargetDate = targetDate;
+    next.lastFailureAt = null;
+    let nextRunAt = Number(schedule.nextRunAt);
+    if (!Number.isFinite(nextRunAt) || nextRunAt <= now + 1000) {
+      nextRunAt = nextDailyScheduleTime(schedule.time);
+      chrome.alarms.create(DAILY_EXPORT_ALARM_NAME, { when: nextRunAt });
+    }
+    await chrome.alarms.clear(DAILY_EXPORT_RECOVERY_ALARM_NAME);
+    const nextRecoveryAt = nextRunAt + DAILY_EXPORT_RECOVERY_DELAY_MS;
+    chrome.alarms.create(DAILY_EXPORT_RECOVERY_ALARM_NAME, { when: nextRecoveryAt });
+    next.nextRunAt = nextRunAt;
+    next.nextRecoveryAt = nextRecoveryAt;
+  } else {
+    next.lastFailureAt = now;
+  }
+  return writeDailyExportSchedule(next);
+}
+
+async function runDailyJsonExport({ source = "manual", targetDate = "" } = {}) {
+  if (dailyExportRunning) return;
+  dailyExportRunning = true;
+  let openedTabId = null;
+  try {
+    let schedule = await readDailyExportSchedule();
+    if (!schedule.enabled) return;
+    schedule = await clearStaleDailyRun(schedule);
+    if (dailyRunIsFresh(schedule)) return;
+    schedule = await recordDailyTrigger(schedule, source);
+    const { startDate, endDate } = targetDate ? dateRangeForTargetDate(targetDate) : yesterdayDateRange();
+    if (schedule.lastCompletedTargetDate === startDate) {
+      await finishDailyExportSchedule(`${dailyRunLabel(source)}跳过：${startDate} 已导出完成。`, {
+        source,
+        targetDate: startDate,
+        success: true
+      });
+      return;
+    }
+    if (schedule.employees.length !== 5) {
+      await finishDailyExportSchedule("失败：定时任务必须保存五位销售。", { source, targetDate: startDate, success: false });
+      return;
+    }
+    const currentTask = await readTaskState();
+    if (["running", "paused", "canceling"].includes(currentTask.status)) {
+      await finishDailyExportSchedule("跳过：已有导出任务正在运行。", { source, targetDate: startDate, success: false });
+      return;
+    }
+
+    const taskId = `daily-json-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const initialLog = `[${dailyRunLabel(source)}] 开始导出昨天 ${startDate} 的 JSON：${schedule.employees.join("、")}`;
+    try {
+      const claimed = await claimDailyExportRun({ source, targetDate: startDate, taskId });
+      if (!claimed) return;
+      const dailyTab = await getDailyExportTab();
+      const tab = dailyTab.tab;
+      openedTabId = dailyTab.openedByPlugin ? tab.id : null;
+      await writeTaskState({
+        status: "running",
+        logs: [initialLog],
+        startedAt: Date.now(),
+        formatLabel: "定时 JSON",
+        employees: schedule.employees,
+        startDate,
+        endDate,
+        syncToFeishu: false,
+        taskId,
+        tabId: tab.id,
+        message: "每日定时导出进行中"
+      }).then(broadcastTaskState);
+      const frameId = await connectDailyExportPage(tab.id);
+      const result = await chrome.tabs.sendMessage(tab.id, {
+        module: MODULE_ID,
+        type: "START_EXPORT",
+        taskId,
+        exportFormat: "json",
+        employees: schedule.employees,
+        storeName: schedule.storeName,
+        syncToFeishu: false,
+        startDate,
+        endDate
+      }, { frameId });
+      if (!result?.ok) throw new Error(result?.message || "定时导出未完成。");
+      const resultText = `完成：${startDate}，${result.totalRows || 0} 条记录。`;
+      await finishDailyExportSchedule(resultText, { source, targetDate: startDate, success: true });
+    } catch (error) {
+      const message = `失败：${readableError(error, "无法执行定时导出")}`;
+      await updateTaskState({ status: "error", message });
+      await finishDailyExportSchedule(message, { source, targetDate: startDate, success: false });
+    }
+  } finally {
+    // 仅关闭本次后台临时创建的页面，绝不关闭用户原本打开的聊天记录页。
+    if (openedTabId) chrome.tabs.remove(openedTabId).catch(() => {});
+    dailyExportRunning = false;
+  }
+}
+
+async function runDailyRecoveryCheck() {
+  let schedule = await readDailyExportSchedule();
+  if (!schedule.enabled) return;
+  schedule = await clearStaleDailyRun(schedule);
+  if (dailyRunIsFresh(schedule)) return;
+  const { targetDate: startDate } = dueDailyTarget(schedule);
+  if (schedule.lastCompletedTargetDate === startDate) {
+    await finishDailyExportSchedule(`补偿检查：${startDate} 已确认导出完成。`, {
+      source: "recovery",
+      targetDate: startDate,
+      success: true
+    });
+    return;
+  }
+  await runDailyJsonExport({ source: "recovery", targetDate: startDate });
+}
+
+/** Chrome 重启后只补偿“启用之后已经错过”的最近一次日报，不回补未知历史日期。 */
+async function runStartupDailyRecovery() {
+  let schedule = await readDailyExportSchedule();
+  if (!schedule.enabled) return;
+  schedule = await clearStaleDailyRun(schedule);
+  if (dailyRunIsFresh(schedule)) return;
+  const { targetDate, slotAt } = dueDailyTarget(schedule);
+  const enabledAt = Number(schedule.enabledAt);
+  if (!Number.isFinite(enabledAt) || enabledAt <= 0 || slotAt < enabledAt) return;
+  if (schedule.lastCompletedTargetDate === targetDate) return;
+  await runDailyJsonExport({ source: "startupRecovery", targetDate });
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === DAILY_EXPORT_ALARM_NAME) {
+    runDailyJsonExport({ source: "alarm" }).catch(() => {});
+    return;
+  }
+  if (alarm.name === DAILY_EXPORT_RECOVERY_ALARM_NAME) {
+    runDailyRecoveryCheck().catch(() => {});
+    return;
+  }
+  if (alarm.name === DAILY_EXPORT_HEALTH_ALARM_NAME) {
+    ensureDailyExportAlarms().catch(() => {});
+  }
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  ensureDailyExportAlarms()
+    .then(() => runStartupDailyRecovery())
+    .catch(() => {});
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  ensureDailyExportAlarms().catch(() => {});
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || message.module !== MODULE_ID) return false;
+
+  if (message.type === "GET_DAILY_EXPORT_SCHEDULE") {
+    readDailyExportSchedule()
+      .then((schedule) => sendResponse({ ok: true, schedule }))
+      .catch((error) => sendResponse({ ok: false, message: readableError(error, "读取定时导出设置失败") }));
+    return true;
+  }
+
+  if (message.type === "SAVE_DAILY_EXPORT_SCHEDULE") {
+    (async () => {
+      const enabled = message.enabled === true;
+      const time = String(message.time || "");
+      const employees = Array.isArray(message.employees) ? message.employees.map((item) => String(item || "").trim()).filter(Boolean) : [];
+      const storeName = String(message.storeName || "").trim();
+      if (enabled && !validScheduleTime(time)) throw new Error("请选择有效的每日执行时间。");
+      if (enabled && employees.length !== 5) throw new Error("每日自动导出必须固定选择五位销售。");
+      if (enabled && !storeName) throw new Error("请先填写店铺名称。");
+      const current = await readDailyExportSchedule();
+      const keepEnabledAt = enabled && current.enabled && current.time === time &&
+        Number.isFinite(Number(current.enabledAt)) && Number(current.enabledAt) > 0;
+      const saved = await writeDailyExportSchedule({
+        ...current,
+        enabled,
+        time: validScheduleTime(time) ? time : current.time,
+        employees,
+        storeName,
+        // 新启用或调整时间后只从新的排程开始补偿，避免误跑设置之前的日期。
+        enabledAt: keepEnabledAt ? current.enabledAt : (enabled ? Date.now() : null),
+        activeRun: enabled ? current.activeRun : null
+      });
+      const schedule = await armDailyExportAlarm(saved);
+      sendResponse({ ok: true, schedule });
+    })().catch((error) => sendResponse({ ok: false, message: readableError(error, "保存定时导出设置失败") }));
+    return true;
+  }
+
+  if (message.type === "RUN_DAILY_EXPORT_NOW") {
+    readDailyExportSchedule().then((schedule) => {
+      if (!schedule.enabled) throw new Error("请先启用并保存每日自动导出设置。");
+      if (schedule.employees.length !== 5) throw new Error("每日自动导出必须保存五位销售。");
+      runDailyJsonExport({ source: "manual" }).catch(() => {});
+      sendResponse({ ok: true, message: "已启动每日自动导出测试。" });
+    }).catch((error) => sendResponse({ ok: false, message: readableError(error, "无法启动定时导出测试") }));
+    return true;
+  }
 
   if (message.type === "GET_FEISHU_SYNC_SETTINGS") {
     readFeishuSyncSettings()
@@ -1445,16 +2076,117 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (!["DOWNLOAD_EXCEL", "DOWNLOAD_JSON", "DOWNLOAD_JSONL"].includes(message.type)) return false;
+  if (message.type === "STORE_CUSTOMER_HISTORY_BATCH") {
+    (async () => {
+      const taskId = String(message.taskId || "");
+      const startIndex = Number(message.startIndex);
+      const files = Array.isArray(message.files) ? message.files : [];
+      if (!taskId || !Number.isInteger(startIndex) || startIndex < 0) {
+        throw new Error("客户完整记录暂存参数无效。请重新导出。");
+      }
+      for (let offset = 0; offset < files.length; offset += 1) {
+        const file = files[offset] || {};
+        await storeCustomerHistoryPart({
+          taskId,
+          index: startIndex + offset,
+          customer: file.customer,
+          rows: file.rows
+        });
+      }
+      sendResponse({ ok: true, storedCount: files.length });
+    })().catch((error) => sendResponse({ ok: false, message: readableError(error, "客户完整记录暂存失败") }));
+    return true;
+  }
+
+  if (message.type === "CLEAR_CUSTOMER_HISTORY_STAGING") {
+    deleteStoredCustomerHistoryParts(String(message.taskId || ""))
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, message: readableError(error, "清理客户完整记录暂存失败") }));
+    return true;
+  }
+
+  if (!["DOWNLOAD_EXCEL", "DOWNLOAD_JSON", "DOWNLOAD_JSONL", "DOWNLOAD_BATCH_ARCHIVE", "DOWNLOAD_CUSTOMER_HISTORY_ARCHIVE"].includes(message.type)) return false;
 
   (async () => {
+    if (message.type === "DOWNLOAD_BATCH_ARCHIVE") {
+      const taskId = message.taskId || "";
+      throwIfBackgroundTaskCanceled(taskId);
+      const archive = await buildBatchArchive({
+        files: (message.files || []).map((file) => ({
+          ...file,
+          storeName: message.storeName || CHAT_EXPORT_DOWNLOAD_FILENAME.resolveStoreName(file.rawPayloads || file.rows)
+        })),
+        exportFormat: message.exportFormat === "json" ? "json" : "excel",
+        startDate: message.startDate,
+        endDate: message.endDate,
+        taskId
+      });
+      const filename = CHAT_EXPORT_DOWNLOAD_FILENAME.buildArchiveFilename({
+        storeName: message.storeName,
+        employeeNames: message.employeeNames || [],
+        startDate: message.startDate,
+        endDate: message.endDate
+      });
+      const downloadResult = await downloadBlobWithOptionalFeishuSync(
+        archive,
+        filename,
+        taskId,
+        message.syncToFeishu === true
+      );
+      sendResponse({
+        ok: true,
+        downloadId: downloadResult.downloadId,
+        feishu: downloadResult.feishu,
+        message: `批量导出完成，已将 ${(message.files || []).length} 个销售文件压缩为一个 ZIP 文件。`
+      });
+      return;
+    }
+
+    if (message.type === "DOWNLOAD_CUSTOMER_HISTORY_ARCHIVE") {
+      const taskId = message.taskId || "";
+      throwIfBackgroundTaskCanceled(taskId);
+      const storedFileCount = Number(message.storedFileCount);
+      const usesStoredParts = Number.isInteger(storedFileCount) && storedFileCount >= 0;
+      try {
+        const archive = usesStoredParts
+          ? await buildStoredCustomerHistoryArchive({
+            taskId,
+            fileCount: storedFileCount,
+            storeName: message.storeName,
+            startDate: message.startDate,
+            endDate: message.endDate
+          })
+          : await buildCustomerHistoryArchive({
+            files: message.files || [],
+            storeName: message.storeName,
+            startDate: message.startDate,
+            endDate: message.endDate,
+            taskId
+          });
+        const filename = CHAT_EXPORT_DOWNLOAD_FILENAME.buildCustomerHistoryArchiveFilename({
+          storeName: message.storeName,
+          startDate: message.startDate,
+          endDate: message.endDate
+        });
+        const downloadResult = await downloadBlobWithOptionalFeishuSync(archive, filename, taskId, false);
+        sendResponse({
+          ok: true,
+          downloadId: downloadResult.downloadId,
+          message: `客户完整记录导出完成，压缩包包含 ${usesStoredParts ? storedFileCount : (message.files || []).length} 位客户。`
+        });
+      } finally {
+        if (usesStoredParts) await deleteStoredCustomerHistoryParts(taskId);
+      }
+      return;
+    }
+
     if (["DOWNLOAD_JSON", "DOWNLOAD_JSONL"].includes(message.type)) {
       const taskId = message.taskId || "";
       throwIfBackgroundTaskCanceled(taskId);
       const records = buildCompatibleRecords({ rows: message.rows || [] });
       const compatibleResult = {
-        pluginName: "检索版插件",
-        pluginVersion: globalThis.LAI_PLUGIN_VERSION || "V1.5.0",
+        pluginName: "LAI助手",
+        pluginVersion: globalThis.LAI_PLUGIN_VERSION || "V1.4.3",
         ...CHAT_EXPORT_COMPATIBLE_JSON.convertRecords(records)
       };
       const json = CHAT_EXPORT_COMPATIBLE_JSON.stringifyCompatibleJson(compatibleResult);

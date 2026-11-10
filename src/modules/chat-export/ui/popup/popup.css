@@ -168,43 +168,30 @@ select {
   gap: 8px;
 }
 
-.customer-search-section {
-  display: grid;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.customer-search-section > input {
-  width: 100%;
-  box-sizing: border-box;
-  height: 38px;
-  padding: 0 10px;
+.advanced-section {
   border: 1px solid var(--aify-border);
   border-radius: 8px;
   background: var(--aify-surface);
-  color: var(--aify-text);
 }
 
-.customer-search-button {
-  min-height: 36px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--aify-blue);
-  color: #fff;
-  font-weight: 700;
+.advanced-section summary {
+  padding: 10px;
+  color: #36576b;
+  font-size: 13px;
+  font-weight: 750;
   cursor: pointer;
+  user-select: none;
 }
 
-.customer-search-button:disabled {
-  opacity: 0.58;
-  cursor: wait;
+.advanced-section[open] summary {
+  border-bottom: 1px solid var(--aify-border);
+  color: var(--aify-blue);
 }
 
-.customer-search-result {
-  margin: 0;
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.4;
+.advanced-section-content {
+  display: grid;
+  gap: 9px;
+  padding: 10px;
 }
 
 .section-header {
@@ -432,6 +419,59 @@ select {
   background: var(--aify-surface);
 }
 
+.export-mode-section {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--aify-border);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--aify-surface);
+}
+
+.export-mode-section .section-header span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.export-mode-options {
+  display: grid;
+  gap: 7px;
+}
+
+.export-mode-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  padding: 9px;
+  border: 1px solid var(--aify-border);
+  border-radius: 7px;
+  background: var(--aify-surface-subtle);
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.export-mode-option:has(input:checked) {
+  border-color: #75cbd5;
+  background: var(--aify-blue-soft);
+}
+
+.export-mode-option input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  padding: 0;
+  accent-color: var(--aify-blue);
+}
+
+.export-mode-option span {
+  display: grid;
+  gap: 3px;
+}
+
+.export-mode-option strong { color: var(--aify-text); }
+.export-mode-option small { color: var(--aify-muted); font-size: 12px; line-height: 1.4; }
+
 .date-selection-hint {
   color: #64748b;
   font-size: 12px;
@@ -522,6 +562,63 @@ select {
   gap: 8px;
 }
 
+.daily-export-section {
+  display: grid;
+  gap: 9px;
+}
+
+.daily-export-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #164e63;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.daily-export-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--aify-blue);
+}
+
+.daily-export-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.daily-export-actions label {
+  display: grid;
+  gap: 5px;
+  color: #36576b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#saveDailyExport {
+  width: auto;
+  padding-inline: 12px;
+  background: #164e63;
+  white-space: nowrap;
+}
+
+#runDailyExportNow {
+  width: auto;
+  padding-inline: 12px;
+  background: #087f69;
+  white-space: nowrap;
+}
+
+.daily-export-hint {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 #storeNameHint {
   color: #64748b;
   font-size: 12px;
@@ -538,10 +635,6 @@ select {
 .feishu-sync-section {
   display: grid;
   gap: 10px;
-  border: 1px solid #b9e2e6;
-  border-radius: 8px;
-  background: #f3fcfc;
-  padding: 10px;
 }
 
 .feishu-sync-heading {
@@ -655,6 +748,11 @@ button {
   background: #0b7f96;
 }
 
+#exportCustomerHistory {
+  grid-column: 1 / -1;
+  background: #164e63;
+}
+
 #cancel {
   background: #dc2626;
   color: white;
@@ -685,7 +783,7 @@ pre {
 }
 
 @media (max-width: 360px) {
-  .dates, .feishu-sync-grid, .feishu-table-actions, .store-name-actions {
+  .dates, .feishu-sync-grid, .feishu-table-actions, .store-name-actions, .daily-export-actions {
     grid-template-columns: minmax(0, 1fr);
   }
   .section-header { flex-wrap: wrap; }

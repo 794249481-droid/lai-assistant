@@ -1,16 +1,16 @@
 {
   "manifest_version": 3,
-  "name": "1688 客户聊天检索与导出",
-  "version": "1.5.9",
+  "name": "LAI助手",
+  "version": "1.4.3",
   "minimum_chrome_version": "116",
-  "description": "按客服和客户账号检索 1688 聊天记录，导出 Excel 或 JSON，适合销售复盘。",
+  "description": "LAI助手：仅用于导出已登录 1688 工作台中的聊天记录。",
   "icons": {
     "16": "assets/icons/icon16.png",
     "32": "assets/icons/icon32.png",
     "48": "assets/icons/icon48.png",
     "128": "assets/icons/icon128.png"
   },
-  "permissions": ["activeTab", "tabs", "storage", "downloads", "offscreen", "sidePanel", "scripting"],
+  "permissions": ["activeTab", "tabs", "storage", "downloads", "offscreen", "sidePanel", "scripting", "alarms"],
   "host_permissions": [
     "https://work.1688.com/*",
     "https://air.1688.com/*",
@@ -23,7 +23,7 @@
   ],
   "background": { "service_worker": "src/background.js" },
   "action": {
-    "default_title": "1688 客户聊天检索"
+    "default_title": "LAI助手"
   },
   "side_panel": {
     "default_path": "src/modules/chat-export/ui/popup/popup.html"
@@ -33,7 +33,6 @@
     "js": [
       "src/version.js",
       "src/modules/chat-export/shared/download-filename.js",
-      "src/modules/chat-export/shared/date-selection.js",
       "src/modules/chat-export/content/content.js"
     ],
     "all_frames": true,

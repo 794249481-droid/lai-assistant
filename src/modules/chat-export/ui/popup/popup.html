@@ -4,13 +4,13 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="./popup.css">
-    <title>检索版插件</title>
+    <title>LAI助手</title>
   </head>
   <body class="aifyModule aifyModule--chat">
     <main class="chat-panel integratedModuleShell">
       <header class="title-row integratedModuleHeader">
-        <img class="lai-brand-logo" src="../../../../../assets/brand/lai-logo.svg" alt="检索版插件">
-        <h1>检索版插件</h1>
+        <img class="lai-brand-logo" src="../../../../../assets/brand/lai-logo.svg" alt="LAI助手">
+        <h1>LAI助手</h1>
         <span id="runStatusBadge" class="run-status-badge" data-status="idle" aria-live="polite">空闲</span>
       </header>
       <p id="status">请打开聊天记录页面，然后读取员工账号。</p>
@@ -28,15 +28,28 @@
         <div id="employeeList" class="employee-list" role="group" aria-label="员工账号列表"></div>
       </section>
 
-      <section class="customer-search-section" aria-labelledby="customerAccountLabel">
+      <details class="advanced-section daily-export-section">
+        <summary id="dailyExportTitle">每日自动导出</summary>
+        <div class="advanced-section-content">
         <div class="section-header">
-          <strong id="customerAccountLabel">客户旺旺号检索</strong>
-          <span>选填，留空则导出全部客户</span>
+          <strong>定时设置</strong>
+          <span id="dailyExportStatus">未启用</span>
         </div>
-        <input id="customerAccount" type="text" maxlength="80" autocomplete="off" placeholder="请输入客户旺旺号，例如：buyer_123456">
-        <button id="searchCustomerEmployees" class="customer-search-button" type="button">检索已勾选销售</button>
-        <p id="customerSearchResult" class="customer-search-result" aria-live="polite">输入旺旺号后，可检索对应销售。</p>
-      </section>
+        <label class="daily-export-toggle" for="dailyExportEnabled">
+          <input id="dailyExportEnabled" type="checkbox">
+          <span>每天自动导出昨天的 JSON</span>
+        </label>
+        <div class="daily-export-actions">
+          <label>
+            执行时间
+            <input id="dailyExportTime" type="time" value="08:00">
+          </label>
+          <button id="saveDailyExport" type="button">保存定时任务</button>
+          <button id="runDailyExportNow" type="button">立即测试一次</button>
+        </div>
+        <p id="dailyExportHint" class="daily-export-hint">请先读取员工列表并勾选五位销售，再保存。Chrome、1688 登录页面和电脑需保持可用。</p>
+        </div>
+      </details>
 
       <section id="taskProgressCard" class="task-progress-card" aria-labelledby="taskProgressTitle">
         <div class="task-progress-header">
@@ -86,11 +99,28 @@
             <button class="date-preset-button" type="button" data-date-preset="yesterday" aria-pressed="false">昨天</button>
             <button class="date-preset-button" type="button" data-date-preset="lastWeek" aria-pressed="false">上周</button>
             <button class="date-preset-button" type="button" data-date-preset="last15Days" aria-pressed="false">近15天</button>
-            <button class="date-preset-button" type="button" data-date-preset="last3Months" aria-pressed="false">近三个月</button>
+            <button class="date-preset-button" type="button" data-date-preset="last30Days" aria-pressed="false">近30天</button>
             <button class="date-preset-button" type="button" data-date-preset="lastMonth" aria-pressed="false">上个月</button>
             <button class="date-preset-button" type="button" data-date-preset="thisMonth" aria-pressed="false">本月</button>
           </div>
           <p id="datePresetSummary" aria-live="polite">请选择一个快捷日期范围。</p>
+        </div>
+      </section>
+
+      <section class="export-mode-section" aria-labelledby="exportModeTitle">
+        <div class="section-header">
+          <strong id="exportModeTitle">读取方式</strong>
+          <span>完整记录按客户分别打包</span>
+        </div>
+        <div class="export-mode-options" role="radiogroup" aria-label="聊天记录读取方式">
+          <label class="export-mode-option">
+            <input type="radio" name="exportMode" value="period" checked>
+            <span><strong>按销售日期记录</strong><small>导出所选销售、所选日期内的聊天消息。</small></span>
+          </label>
+          <label class="export-mode-option">
+            <input type="radio" name="exportMode" value="customerHistory">
+            <span><strong>按客户完整记录</strong><small>先按销售和日期筛客户，再读取每位客户可追溯的完整记录。</small></span>
+          </label>
         </div>
       </section>
 
@@ -105,7 +135,10 @@
         </div>
       </section>
 
-      <section class="feishu-sync-section" aria-labelledby="feishuSyncTitle">
+      <details class="advanced-section feishu-sync-section">
+        <summary>飞书同步（可选）</summary>
+        <div class="advanced-section-content">
+      <section aria-labelledby="feishuSyncTitle">
         <div class="feishu-sync-heading">
           <label class="feishu-sync-toggle" for="syncToFeishu">
             <input id="syncToFeishu" type="checkbox">
@@ -144,10 +177,13 @@
           <p id="feishuSyncHint" class="feishu-sync-hint" aria-live="polite">开启同步后，请保存凭证、读取表格字段并选择附件字段。</p>
         </div>
       </section>
+        </div>
+      </details>
 
       <div class="export-actions">
         <button id="exportExcel" type="button">导出 Excel</button>
         <button id="exportJson" type="button">导出 JSON</button>
+        <button id="exportCustomerHistory" type="button" hidden>导出客户完整记录 ZIP</button>
       </div>
       <div id="taskControls" class="task-controls" hidden>
         <button id="pause" type="button">暂停</button>

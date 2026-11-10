@@ -3,6 +3,11 @@
   window.__chatExportNetworkHooked = true;
 
   const KEYWORDS = ["chat", "message", "reception", "diversion", "selfcheck", "record"];
+  const DIRECT_API_METHODS = new Map([
+    ["mtop.ali.ww.cbu.solution.querySubAccountList", "GET"],
+    ["mtop.ali.ww.cbu.listUserHistoryConversationView", "POST"],
+    ["mtop.ali.ww.cbu.getListUserMessages", "POST"]
+  ]);
   let bridgePort = null;
   let bridgeNonce = "";
 
@@ -12,6 +17,61 @@
     bridgeNonce = String(event.data.nonce);
     bridgePort = event.ports[0];
     bridgePort.start?.();
+    bridgePort.onmessage = (portEvent) => {
+      const message = portEvent.data;
+      if (!message || message.type !== "GD_CHAT_DIRECT_REQUEST" || message.nonce !== bridgeNonce || !message.id) return;
+      if (!DIRECT_API_METHODS.has(message.api)) {
+        bridgePort.postMessage({
+          type: "GD_CHAT_DIRECT_RESPONSE",
+          nonce: bridgeNonce,
+          id: message.id,
+          ok: false,
+          message: "不允许的聊天接口请求"
+        });
+        return;
+      }
+      const client = window.lib?.mtop;
+      if (!client || typeof client.request !== "function") {
+        bridgePort.postMessage({
+          type: "GD_CHAT_DIRECT_RESPONSE",
+          nonce: bridgeNonce,
+          id: message.id,
+          ok: false,
+          retryable: true,
+          message: "1688 页面接口组件尚未加载完成"
+        });
+        return;
+      }
+      Promise.resolve()
+        .then(() => client.request({
+          api: message.api,
+          v: "1.0",
+          data: message.data || {},
+          type: DIRECT_API_METHODS.get(message.api),
+          dataType: "originaljsonp",
+          timeout: 20000,
+          preventFallback: true
+        }))
+        .then((response) => bridgePort?.postMessage({
+          type: "GD_CHAT_DIRECT_RESPONSE",
+          nonce: bridgeNonce,
+          id: message.id,
+          ok: true,
+          data: response?.data || {}
+        }))
+        .catch((error) => {
+          const detail = Array.isArray(error?.ret) ? error.ret.join("; ") : String(error?.message || error || "接口请求失败");
+          const retryable = /TOKEN|BUSY|繁忙|稍后|TIMEOUT|FLOW_LIMIT|限流|系统异常/i.test(detail) && !/USER_VALIDATE/i.test(detail);
+          bridgePort?.postMessage({
+            type: "GD_CHAT_DIRECT_RESPONSE",
+            nonce: bridgeNonce,
+            id: message.id,
+            ok: false,
+            retryable,
+            message: detail
+          });
+        });
+    };
     bridgePort.postMessage({ type: "GD_CHAT_NETWORK_READY", nonce: bridgeNonce });
   }
 

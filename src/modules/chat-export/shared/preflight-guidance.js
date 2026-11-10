@@ -5,8 +5,9 @@
   const REMINDER_LABEL = '提醒';
 
   function earliestAllowedDate(today = new Date()) {
-    const dates = root.A1688ChatExportDateSelection || (typeof require === 'function' && require('./date-selection.js'));
-    return dates.formatLocalDate(dates.threeMonthsEarlier(today));
+    const date = new Date(today);
+    date.setMonth(date.getMonth() - 3);
+    return date.toISOString().slice(0, 10);
   }
 
   function createReminder(text) {

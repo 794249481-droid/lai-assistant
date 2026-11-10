@@ -53,7 +53,7 @@
   function buildFilename({ storeName, employeeName, startDate, endDate }, extension) {
     const selectedStoreName = String(storeName || '').trim();
     const branchName = selectedStoreName ? '店铺' : '未命名店铺';
-    const storePart = safeFileNamePart(branchName, '未命名店铺');
+    const storePart = safeFileNamePart(branchName, '一店');
     const employeePart = safeFileNamePart(employeeName, "员工");
     const startDatePart = safeFileNamePart(startDate, "开始日期");
     const endDatePart = safeFileNamePart(endDate, "结束日期");
@@ -76,7 +76,7 @@
   function buildJsonFilename({ storeName, employeeName, startDate, endDate }) {
     const selectedStoreName = String(storeName || '').trim();
     const branchName = selectedStoreName ? '店铺' : '未命名店铺';
-    const storePart = safeJsonFileNamePart(branchName, '未命名店铺');
+    const storePart = safeJsonFileNamePart(branchName, '一店');
     const employeePart = safeJsonFileNamePart(employeeName, "unknown");
     const startDatePart = safeJsonFileNamePart(startDate, isoDate(new Date()));
     const endDatePart = safeJsonFileNamePart(endDate, startDatePart);
@@ -84,6 +84,36 @@
       ? startDatePart
       : `${startDatePart}_至_${endDatePart}`;
     return `${storePart}_${employeePart}_${datePart}.json`;
+  }
+
+  function buildArchiveFilename({ storeName, employeeNames = [], startDate, endDate }) {
+    const selectedStoreName = String(storeName || '').trim();
+    const branchName = selectedStoreName ? '店铺' : '未命名店铺';
+    const storePart = safeJsonFileNamePart(branchName, '一店');
+    const names = employeeNames.filter(Boolean).map((name) => safeJsonFileNamePart(name, '员工'));
+    const employeePart = safeJsonFileNamePart(names.join('、'), '员工');
+    const startDatePart = safeJsonFileNamePart(startDate, isoDate(new Date()));
+    const endDatePart = safeJsonFileNamePart(endDate, startDatePart);
+    return `${storePart}_${employeePart}_${startDatePart}_至_${endDatePart}.zip`;
+  }
+
+  function branchName(storeName) {
+    return String(storeName || '').trim() ? '店铺' : '未命名店铺';
+  }
+
+  function buildCustomerHistoryJsonFilename({ storeName, customerName, startDate, endDate }) {
+    const storePart = safeJsonFileNamePart(branchName(storeName), '一店');
+    const customerPart = safeJsonFileNamePart(customerName, '客户');
+    const startDatePart = safeJsonFileNamePart(startDate, isoDate(new Date()));
+    const endDatePart = safeJsonFileNamePart(endDate, startDatePart);
+    return `${storePart}_${customerPart}_完整记录_${startDatePart}_至_${endDatePart}.json`;
+  }
+
+  function buildCustomerHistoryArchiveFilename({ storeName, startDate, endDate }) {
+    const storePart = safeJsonFileNamePart(branchName(storeName), '一店');
+    const startDatePart = safeJsonFileNamePart(startDate, isoDate(new Date()));
+    const endDatePart = safeJsonFileNamePart(endDate, startDatePart);
+    return `${storePart}_客户完整记录_${startDatePart}_至_${endDatePart}.zip`;
   }
 
   function dateFromIso(value) {
@@ -118,6 +148,9 @@
   return Object.freeze({
     buildExcelFilename,
     buildJsonFilename,
+    buildArchiveFilename,
+    buildCustomerHistoryJsonFilename,
+    buildCustomerHistoryArchiveFilename,
     createSevenDayPeriods,
     resolveStoreName,
     safeFileNamePart
